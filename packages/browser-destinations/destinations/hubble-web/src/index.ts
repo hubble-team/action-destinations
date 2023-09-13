@@ -2,7 +2,7 @@ import type { Settings } from './generated-types'
 import type { BrowserDestinationDefinition } from '@segment/browser-destination-runtime/types'
 import { browserDestination } from '@segment/browser-destination-runtime/shim'
 
-import { Hubble, Methods } from './types'
+import { Hubble } from './types'
 import { defaultValues } from '@segment/actions-core'
 
 import track from './track'
@@ -24,13 +24,15 @@ export const destination: BrowserDestinationDefinition<Settings, Hubble> = {
       name: 'Identify user',
       subscribe: 'type = "identify"',
       partnerAction: 'identify',
-      mapping: defaultValues(identify.fields)
+      mapping: defaultValues(identify.fields),
+      type: 'automatic'
     },
     {
       name: 'Track event',
       subscribe: 'type = "track"',
       partnerAction: 'track',
-      mapping: defaultValues(track.fields)
+      mapping: defaultValues(track.fields),
+      type: 'automatic'
     }
   ],
 
@@ -45,33 +47,17 @@ export const destination: BrowserDestinationDefinition<Settings, Hubble> = {
 
   initialize: async ({ settings }, deps) => {
     if (!window.Hubble) {
-      const methods = ['identify', 'track']
-      window.Hubble = {
-        id: settings.appID,
-        _queue: [],
-        initialized: false
-      }
+      /**
+       * FIXME: Use production URL e.g. `https://sdk.hubble.team`
+       */
+      await deps.loadScript(`http://localhost:3002/sdk/${settings.appID}.js`)
+      await deps.resolveWhen(() => window.Hubble?.initialized, 100)
 
-      const queued = (method: keyof Methods) => {
-        return (...args: unknown[]) => {
-          if (window.Hubble._queue) {
-            // eslint-disable-next-line  @typescript-eslint/no-unsafe-call
-            window.Hubble._queue.push(() => {
-              window.Hubble[method]?.(args)
-            })
-          }
-        }
-      }
-
-      methods.forEach((method) => {
-        window.Hubble[method as keyof Methods] = queued(method as keyof Methods)
-      })
-
-      await deps.loadScript(`https://cdn.hubble.team/sdk/hubble.js`)
-      await deps.resolveWhen(() => window.Hubble && window.Hubble.initialized, 500)
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-call
-      window.Hubble?._emitter?.setSource('__segment__')
+      /**
+       * FIXME: Consider exposing a `setSource` method if we intend to keep
+       *        `_emitter` private. Or just remove underscore in `_emitter`
+       */
+      ;(window.Hubble as Hubble)._emitter?.setSource('__segment__')
     }
 
     return window.Hubble
